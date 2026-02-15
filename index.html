@@ -315,12 +315,7 @@
             .content {
                 grid-template-columns: 1fr;
             }
-            
-            .map-container {
-                height: 400px;
-            }
-            
-            .places-list {
+            .map-container, .places-list {
                 height: 400px;
             }
         }
@@ -329,13 +324,13 @@
 <body>
     <div class="header">
         <h1>🗺️ Astana Guide</h1>
-        <p>Все места Астаны в одном приложении</p>
+        <p>Все места Астаны (Сервис активен)</p>
     </div>
 
     <div class="container">
         <div class="search-section">
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Поиск заведений, достопримечательностей, ресторанов..." value="ресторан">
+                <input type="text" id="searchInput" placeholder="Поиск..." value="ресторан">
                 <button onclick="searchPlaces()">Найти</button>
             </div>
             <div class="filters">
@@ -349,22 +344,17 @@
                 <button class="filter-btn" onclick="filterPlaces('pharmacy')">💊 Аптеки</button>
             </div>
             <div class="info-bar">
-                <span class="places-count" id="placesCount">Загрузка мест...</span>
+                <span class="places-count" id="placesCount">Синхронизация с сервером...</span>
                 <button class="load-more-btn" id="loadMoreBtn" onclick="loadMorePlaces()" disabled>Загрузить еще</button>
             </div>
         </div>
 
         <div class="content">
-            <div class="map-container">
-                <div id="map"></div>
-            </div>
+            <div class="map-container"><div id="map"></div></div>
             <div class="places-list" id="placesList">
                 <h2>📍 Места в Астане</h2>
                 <div id="placesContainer">
-                    <div class="loading">
-                        <div class="loading-spinner"></div>
-                        Загружаем все места Астаны...
-                    </div>
+                    <div class="loading"><div class="loading-spinner"></div>Загрузка данных...</div>
                 </div>
             </div>
         </div>
@@ -372,318 +362,168 @@
         <div class="events-section">
             <h2>📅 События в Астане</h2>
             <div class="events-grid" id="eventsContainer">
-                <div class="loading">Загрузка событий...</div>
+                <div class="loading">Загрузка ленты событий...</div>
             </div>
         </div>
     </div>
 
-    <!-- Leaflet JavaScript -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
-        // ==========================================
-        // ИСПОЛЬЗУЕМ БЭКЕНД ВМЕСТО ПРЯМОГО КЛЮЧА
-        // ==========================================
-        const BACKEND_URL = '/api/places';
-        const EVENTS_URL = '/api/events';
+        // АБСОЛЮТНЫЕ ПУТИ К ВАШЕМУ бэкенду
+        const BACKEND_URL = 'http://127.0.0.1:5000/api/places';
+        const EVENTS_URL = 'http://127.0.0.1:5000/api/events';
         
-        // Координаты Астаны
         const ASTANA_CENTER = [51.1282, 71.4305];
-        
-        // Состояние приложения
-        let map;
-        let markers = [];
-        let allPlaces = [];
-        let displayedPlaces = [];
-        let currentFilter = 'all';
-        let currentPage = 1;
-        let isLoading = false;
-        let currentQuery = 'ресторан';
-        let hasMorePages = true;
+        let map, markers = [], allPlaces = [], displayedPlaces = [], currentFilter = 'all', currentPage = 1, isLoading = false, currentQuery = 'ресторан', hasMorePages = true;
 
-        // Категории для поиска
         const categoryMap = {
-            'all': '',
-            'restaurant': 'ресторан',
-            'cafe': 'кафе',
-            'hotel': 'отель',
-            'museum': 'музей',
-            'park': 'парк',
-            'shopping': 'торговый центр',
-            'pharmacy': 'аптека',
-            'attraction': 'достопримечательность'
+            'all': '', 'restaurant': 'ресторан', 'cafe': 'кафе', 'hotel': 'отель', 'museum': 'музей', 'park': 'парк', 'shopping': 'торговый центр', 'pharmacy': 'аптека', 'attraction': 'достопримечательность'
         };
 
-        // Инициализация карты
         window.onload = function() {
             initMap();
             loadEvents();
-            testAPIKey(); // Теперь тестирует связь с бэкендом
+            testConnection();
         };
 
         function initMap() {
             map = L.map('map').setView(ASTANA_CENTER, 12);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap, © 2GIS'
-            }).addTo(map);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
         }
 
-        // Тест связи с бэкендом
-        async function testAPIKey() {
+        async function testConnection() {
             try {
                 const response = await fetch(`${BACKEND_URL}?q=тест&page_size=1`);
                 const data = await response.json();
-                
                 if (data.meta && data.meta.code === 200) {
-                    console.log('✅ Бэкенд работает!');
-                    searchPlaces(); 
-                } else {
-                    showDetailedError(data);
-                }
-            } catch (error) {
-                showError('Ошибка соединения с бэкендом: ' + error.message);
-            }
+                    console.log('✅ Бэкенд на связи');
+                    searchPlaces();
+                } else { showDetailedError(data); }
+            } catch (error) { showError('Запустите python app.py! ' + error.message); }
         }
 
         function showDetailedError(apiResponse) {
-            let errorMessage = 'Не удалось загрузить места. ';
-            let errorDetails = '';
-            
-            if (apiResponse.meta && apiResponse.meta.error) {
-                const error = apiResponse.meta.error;
-                errorMessage += error.message || 'Ошибка сервера';
-                errorDetails = `Тип ошибки: ${error.type || 'unknown'}\nКод: ${apiResponse.meta.code || 'unknown'}`;
-            }
-            
+            let msg = 'Ошибка API. ';
+            if (apiResponse.meta && apiResponse.meta.error) msg += apiResponse.meta.error.message;
             const container = document.getElementById('placesContainer');
-            container.innerHTML = `
-                <div class="error">
-                    <strong>${errorMessage}</strong>
-                    <div class="error-details">${errorDetails}</div>
-                    <p style="margin-top: 15px; font-size: 14px;">
-                        📝 Проверьте, запущен ли файл app.py и корректен ли ключ в нем.
-                    </p>
-                </div>
-            `;
+            container.innerHTML = `<div class="error"><strong>${msg}</strong></div>`;
         }
 
         async function searchPlaces(reset = true) {
-            if (reset) {
-                currentPage = 1;
-                allPlaces = [];
-                displayedPlaces = [];
-                hasMorePages = true;
-            }
-            
+            if (reset) { currentPage = 1; allPlaces = []; displayedPlaces = []; hasMorePages = true; }
             const query = document.getElementById('searchInput').value.trim();
-            if (query) {
-                currentQuery = query;
-            }
-            
+            if (query) currentQuery = query;
             await loadPlacesFromAPI();
         }
 
         async function loadPlacesFromAPI() {
             if (isLoading || !hasMorePages) return;
-            
             isLoading = true;
             document.getElementById('loadMoreBtn').disabled = true;
-            
             try {
-                const searchQuery = currentFilter === 'all' 
-                    ? `${currentQuery} Астана`
-                    : `${categoryMap[currentFilter]} Астана`;
-                
-                const params = {
-                    q: searchQuery,
-                    page: currentPage,
-                    page_size: 10
-                };
-                
-                const queryString = new URLSearchParams(params).toString();
-                const fullUrl = `${BACKEND_URL}?${queryString}`;
-                
-                console.log('Запрос к бэкенду:', fullUrl);
-                
-                const response = await fetch(fullUrl);
+                const q = currentFilter === 'all' ? `${currentQuery} Астана` : `${categoryMap[currentFilter]} Астана`;
+                const response = await fetch(`${BACKEND_URL}?q=${encodeURIComponent(q)}&page=${currentPage}`);
                 const data = await response.json();
-                
-                if (data.meta && data.meta.code === 200) {
-                    if (data.result && data.result.items) {
-                        const newPlaces = data.result.items.map(item => ({
-                            id: item.id || Math.random(),
-                            name: item.name || 'Без названия',
-                            category: mapRubricToCategory(item.rubrics),
-                            address: item.address_name || item.address || 'Адрес не указан',
-                            coordinates: item.point ? [item.point.lat, item.point.lon] : ASTANA_CENTER,
-                            rating: (Math.random() * 2 + 3).toFixed(1),
-                            description: item.purpose_name || 'Место в Астане'
-                        }));
-                        
-                        allPlaces = [...allPlaces, ...newPlaces];
-                        displayedPlaces = allPlaces;
-                        
-                        hasMorePages = data.result.items.length >= 10;
-                        currentPage++;
-                        
-                        updatePlacesDisplay();
-                    } else {
-                        document.getElementById('placesContainer').innerHTML = `
-                            <div class="error">Ничего не найдено. Попробуйте другой запрос.</div>
-                        `;
-                    }
-                } else {
-                    showDetailedError(data);
+                if (data.meta && data.meta.code === 200 && data.result) {
+                    const newPlaces = data.result.items.map(item => ({
+                        id: item.id || Math.random(),
+                        name: item.name || 'Без названия',
+                        category: mapRubricToCategory(item.rubrics),
+                        address: item.address_name || item.address || 'Адрес не указан',
+                        coordinates: item.point ? [item.point.lat, item.point.lon] : ASTANA_CENTER,
+                        rating: (Math.random() * 2 + 3).toFixed(1),
+                        description: item.purpose_name || 'Место в Астане'
+                    }));
+                    allPlaces = [...allPlaces, ...newPlaces];
+                    displayedPlaces = allPlaces;
+                    hasMorePages = data.result.items.length >= 10;
+                    currentPage++;
+                    updatePlacesDisplay();
                 }
-            } catch (error) {
-                showError('Ошибка загрузки: ' + error.message);
-            } finally {
-                isLoading = false;
-                document.getElementById('loadMoreBtn').disabled = !hasMorePages;
-            }
+            } catch (e) { showError('Ошибка загрузки: ' + e.message); }
+            finally { isLoading = false; document.getElementById('loadMoreBtn').disabled = !hasMorePages; }
         }
 
         function mapRubricToCategory(rubrics) {
             if (!rubrics || !rubrics.length) return 'attraction';
-            const rubricNames = rubrics.map(r => r.name?.toLowerCase() || '');
-            if (rubricNames.some(r => r.includes('ресторан'))) return 'restaurant';
-            if (rubricNames.some(r => r.includes('кафе'))) return 'cafe';
-            if (rubricNames.some(r => r.includes('отель') || r.includes('гостиница'))) return 'hotel';
-            if (rubricNames.some(r => r.includes('музей'))) return 'museum';
-            if (rubricNames.some(r => r.includes('парк'))) return 'park';
-            if (rubricNames.some(r => r.includes('торговый'))) return 'shopping';
-            if (rubricNames.some(r => r.includes('аптек'))) return 'pharmacy';
+            const names = rubrics.map(r => r.name?.toLowerCase() || '');
+            if (names.some(n => n.includes('ресторан'))) return 'restaurant';
+            if (names.some(n => n.includes('кафе'))) return 'cafe';
+            if (names.some(n => n.includes('отель'))) return 'hotel';
+            if (names.some(n => n.includes('музей'))) return 'museum';
+            if (names.some(n => n.includes('парк'))) return 'park';
             return 'attraction';
-        }
-
-        function loadMorePlaces() {
-            loadPlacesFromAPI();
         }
 
         function updatePlacesDisplay() {
             displayPlaces();
             updateMarkers();
-            document.getElementById('placesCount').textContent = `Найдено мест: ${displayedPlaces.length}`;
+            document.getElementById('placesCount').textContent = `Найдено мест: ${allPlaces.length}`;
         }
 
         function displayPlaces() {
             const container = document.getElementById('placesContainer');
-            if (displayedPlaces.length === 0) {
-                container.innerHTML = '<div class="loading">Места не найдены</div>';
-                return;
-            }
-
-            container.innerHTML = displayedPlaces.map(place => `
-                <div class="place-card" onclick="focusOnPlace('${place.id}')">
-                    <div class="category">${getCategoryName(place.category)}</div>
-                    <h3>${place.name}</h3>
-                    <div class="address">${place.address}</div>
-                    <div class="rating">⭐ ${place.rating}</div>
-                    <p style="font-size: 12px; color: #666; margin-top: 5px;">${place.description}</p>
+            if (displayedPlaces.length === 0) { container.innerHTML = '<div class="loading">Пусто</div>'; return; }
+            container.innerHTML = displayedPlaces.map(p => `
+                <div class="place-card" onclick="focusOnPlace('${p.id}')">
+                    <div class="category">${getCategoryName(p.category)}</div>
+                    <h3>${p.name}</h3>
+                    <div class="address">${p.address}</div>
+                    <div class="rating">⭐ ${p.rating}</div>
                 </div>
             `).join('');
         }
 
         function updateMarkers() {
-            markers.forEach(marker => map.removeLayer(marker));
+            markers.forEach(m => map.removeLayer(m));
             markers = [];
-
-            displayedPlaces.forEach(place => {
-                const icon = L.divIcon({
-                    className: 'custom-marker',
-                    html: `<div style="font-size: 24px;">${getMarkerEmoji(place.category)}</div>`,
-                    iconSize: [30, 30],
-                    popupAnchor: [0, -15]
-                });
-
-                const marker = L.marker(place.coordinates, { icon }).addTo(map);
-                marker.bindPopup(`
-                    <div class="place-popup">
-                        <h4>${place.name}</h4>
-                        <p>${place.address}</p>
-                        <p>⭐ ${place.rating}</p>
-                        <p>${place.description}</p>
-                    </div>
-                `);
-                markers.push(marker);
+            displayedPlaces.forEach(p => {
+                const icon = L.divIcon({ html: `<div style="font-size: 24px;">${getMarkerEmoji(p.category)}</div>`, iconSize: [30, 30] });
+                const m = L.marker(p.coordinates, { icon }).addTo(map).bindPopup(`<b>${p.name}</b><br>${p.address}`);
+                markers.push(m);
             });
         }
 
-        function getMarkerEmoji(category) {
-            const emojis = {
-                'restaurant': '🍽️', 'cafe': '☕', 'hotel': '🏨', 'museum': '🏛️', 
-                'park': '🌳', 'shopping': '🛍️', 'pharmacy': '💊', 'attraction': '📍'
-            };
-            return emojis[category] || '📍';
+        function getMarkerEmoji(cat) {
+            const map = { 'restaurant': '🍽️', 'cafe': '☕', 'hotel': '🏨', 'museum': '🏛️', 'park': '🌳' };
+            return map[cat] || '📍';
         }
 
-        function getCategoryName(category) {
-            const names = {
-                'restaurant': '🍽️ Ресторан', 'cafe': '☕ Кафе', 'hotel': '🏨 Отель', 
-                'museum': '🏛️ Музей', 'park': '🌳 Парк', 'shopping': '🛍️ ТЦ', 
-                'pharmacy': '💊 Аптека', 'attraction': '📍 Достопримечательность'
-            };
-            return names[category] || category;
+        function getCategoryName(cat) {
+            const map = { 'restaurant': '🍽️ Ресторан', 'cafe': '☕ Кафе', 'hotel': '🏨 Отель', 'museum': '🏛️ Музей', 'park': '🌳 Парк' };
+            return map[cat] || '📍 Место';
         }
 
-        function focusOnPlace(placeId) {
-            const place = displayedPlaces.find(p => p.id == placeId);
-            if (place) {
-                map.setView(place.coordinates, 16);
-                markers.forEach(marker => {
-                    const markerPos = marker.getLatLng();
-                    if (markerPos.lat === place.coordinates[0] && markerPos.lng === place.coordinates[1]) {
-                        marker.openPopup();
-                    }
-                });
-            }
+        function focusOnPlace(id) {
+            const p = allPlaces.find(x => x.id == id);
+            if (p) { map.setView(p.coordinates, 16); }
         }
 
-        function filterPlaces(category) {
-            currentFilter = category;
-            currentPage = 1;
-            allPlaces = [];
-            displayedPlaces = [];
-            hasMorePages = true;
-            
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+        function filterPlaces(cat) {
+            currentFilter = cat;
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             event.target.classList.add('active');
-            
-            const searchInput = document.getElementById('searchInput');
-            if (category !== 'all') {
-                searchInput.value = categoryMap[category];
-            } else {
-                searchInput.value = 'ресторан';
-            }
             searchPlaces(true);
         }
 
         async function loadEvents() {
             try {
-                const response = await fetch(EVENTS_URL);
-                const events = await response.json();
-                displayEvents(events);
-            } catch (error) {
-                console.error('Ошибка загрузки событий:', error);
-            }
+                const r = await fetch(EVENTS_URL);
+                const data = await r.json();
+                document.getElementById('eventsContainer').innerHTML = data.map(e => `
+                    <div class="event-card">
+                        <h3>${e.title}</h3>
+                        <div class="date">📅 ${e.date}</div>
+                        <div class="location">📍 ${e.location}</div>
+                        <p style="font-size: 12px; margin-top: 5px;">${e.description}</p>
+                    </div>
+                `).join('');
+            } catch (e) { console.error(e); }
         }
 
-        function displayEvents(events) {
-            const container = document.getElementById('eventsContainer');
-            container.innerHTML = events.map(event => `
-                <div class="event-card">
-                    <h3>${event.title}</h3>
-                    <div class="date">📅 ${event.date}</div>
-                    <div class="location">📍 ${event.location}</div>
-                    <p style="font-size: 12px; margin-top: 8px; opacity: 0.9;">${event.description}</p>
-                </div>
-            `).join('');
-        }
-
-        function showError(message) {
-            document.getElementById('placesContainer').innerHTML = `<div class="error">${message}</div>`;
-        }
+        function loadMorePlaces() { loadPlacesFromAPI(); }
+        function showError(m) { document.getElementById('placesContainer').innerHTML = `<div class="error">${m}</div>`; }
     </script>
 </body>
 </html>
